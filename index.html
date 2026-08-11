@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Pan inertia, maplibre-gl-js#1303</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link rel="stylesheet" href="after/maplibre-gl.css">
+    <style>
+        :root { color-scheme: light dark; }
+        body { margin: 0; font: 14px/1.5 system-ui, sans-serif; }
+        header { padding: 12px 16px; }
+        h1 { font-size: 17px; margin: 0 0 4px; }
+        header p { margin: 0; max-width: 70ch; color: #555; }
+        header b { color: inherit; }
+        .maps { display: flex; gap: 12px; padding: 12px 16px 16px; flex-wrap: wrap; }
+        .pane { flex: 1 1 380px; min-width: 320px; }
+        .pane h2 { font-size: 14px; margin: 0 0 6px; }
+        .pane h2 span { font-weight: normal; color: #777; }
+        .map { height: 55vh; min-height: 300px; border-radius: 6px; }
+        ul { margin: 8px 0 0; padding: 0; list-style: none; font: 12px/1.6 ui-monospace, monospace; min-height: 9em; }
+        li:first-child { font-weight: bold; }
+        .big { color: #c00; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #16181c; color: #e6e6e6; }
+            header p, .pane h2 span { color: #9aa0a6; }
+            .big { color: #ff8080; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Pan inertia: <a href="https://github.com/maplibre/maplibre-gl-js/issues/1303">issue #1303</a> / <a href="https://github.com/maplibre/maplibre-gl-js/pull/8150">PR #8150</a></h1>
+    <p>Drag either map, <b>stop moving the mouse, then release the button</b>. The left map is
+    current <code>main</code>, the right one has the fix. Each drag is logged with how long the
+    pointer was held still before the release and how far the map kept panning afterwards.</p>
+</header>
+<div class="maps">
+    <div class="pane">
+        <h2>main <span>(before)</span></h2>
+        <div class="map" id="map-before"></div>
+        <ul id="log-before"></ul>
+    </div>
+    <div class="pane">
+        <h2>PR #8150 <span>(after)</span></h2>
+        <div class="map" id="map-after"></div>
+        <ul id="log-after"></ul>
+    </div>
+</div>
+
+<script type="module">
+    import * as before from './before/maplibre-gl-dev.mjs';
+    import * as after from './after/maplibre-gl-dev.mjs';
+
+    before.setWorkerUrl('./before/maplibre-gl-worker-dev.mjs');
+    after.setWorkerUrl('./after/maplibre-gl-worker-dev.mjs');
+
+    function setUp(maplibregl, container, logId) {
+        const map = new maplibregl.Map({
+            container,
+            style: 'https://demotiles.maplibre.org/style.json',
+            center: [19.15, 48.7],
+            zoom: 5
+        });
+
+        const log = document.getElementById(logId);
+
+        // Time of the last camera change, so we can tell how long the gesture was held still.
+        let lastMoveTime = 0;
+        map.on('move', () => { lastMoveTime = performance.now(); });
+
+        map.on('dragend', () => {
+            const heldStill = Math.round(performance.now() - lastMoveTime);
+            const atRelease = map.project([0, 0]);
+            map.once('moveend', () => {
+                requestAnimationFrame(() => {
+                    const after = map.project([0, 0]);
+                    const panOn = Math.round(Math.hypot(after.x - atRelease.x, after.y - atRelease.y));
+                    const li = document.createElement('li');
+                    li.innerHTML = `held still ${String(heldStill).padStart(3)} ms → panned on <b class="${panOn > 30 ? 'big' : ''}">${panOn} px</b>`;
+                    log.prepend(li);
+                    while (log.children.length > 6) log.lastChild.remove();
+                });
+            });
+        });
+
+        return map;
+    }
+
+    setUp(before, 'map-before', 'log-before');
+    setUp(after, 'map-after', 'log-after');
+</script>
+</body>
+</html>
